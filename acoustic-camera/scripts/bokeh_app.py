@@ -16,6 +16,7 @@ config = ConfigManager(CONFIG_PATH)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, help="Path to an explicit checkpoint (.keras)")
+parser.add_argument("--no-camera", action="store_true", help="Disable camera")
 args, unknown = parser.parse_known_args()
 
 
@@ -42,8 +43,27 @@ if not os.path.exists(results_folder):
     os.makedirs(results_folder)
 
 video_index = 0
-#from.helpers import list_cameras
-#video_index = list_cameras()[0] # get the first valid camera index
+if not args.no_camera:
+    try:
+        from .helpers.test_devices import list_cameras
+        cams = list_cameras()
+        if len(cams) > 0:
+            video_index = cams[0]
+            from .ui.video import VideoStream
+            video_stream = VideoStream(video_index)
+            stream_on = True
+        else:
+            video_stream = None
+            stream_on = False
+            print("No camera found.")
+    except Exception as e:
+        print(f"Error initializing camera: {e}")
+        video_stream = None
+        stream_on = False
+else:
+    video_stream = None
+    stream_on = False
+    print("Camera disabled by user.")
 
 model_on = True
 
@@ -57,7 +77,8 @@ alphas = calculate_alphas(dx=config.get("app_settings.dx"), dz=config.get("app_s
 base_path = config.get("acoular.micgeom_file.base_path")
 file_name = config.get("acoular.micgeom_file.file_name")
 
-micgeom_path = Path(ac.__file__).parent / base_path / file_name
+# micgeom_path = Path(ac.__file__).parent / base_path / file_name
+micgeom_path = Path(base_path) / file_name
     
 processor = Processor(
     config,
@@ -72,7 +93,9 @@ dashboard = Dashboard(
     config,
     processor,
     model_on,
-    alphas)
+    alphas,
+    video_stream,
+    stream_on)
 
 
 doc = curdoc()

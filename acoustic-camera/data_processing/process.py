@@ -35,7 +35,7 @@ class Processor:
         self.log_data = False
         
         # Microphone geometry
-        self.mics = ac.MicGeom(from_file=micgeom_path)
+        self.mics = ac.MicGeom(file=str(micgeom_path))
         
         # Dimensions of the beamforming grid
         self.x_min, self.x_max = self.config.get('beamforming.xmin'), self.config.get('beamforming.xmax')
@@ -60,6 +60,7 @@ class Processor:
         self.z = Lock()
         self.result_lock = Lock()
         self.beamforming_result_lock = Lock()
+        self.verification_result_lock = Lock()
         
         # Path to the model checkpoint
         self.ckpt_path = ckpt_path
@@ -95,6 +96,9 @@ class Processor:
                                     'max_y': [0],
                                     'max_s': [0]}
         
+        # Results dictionary for verification
+        self.verification_results = {'levels': np.zeros(16)}
+
         self.results_folder = results_folder
         self.data_filename, self.results_filename = self._get_result_filenames('model')
         
@@ -183,11 +187,11 @@ class Processor:
         print("Setting up generators for the process.")
         
         if self.ckpt_path is None or not self.model_on:
-            self.dev = ac.SoundDeviceSamplesGenerator(device=self.device, numchannels=16)
+            self.dev = ac.SoundDeviceSamplesGenerator(device=self.device, num_channels=16)
         
         else:
             from .SamplesGenerator import SoundDeviceSamplesGeneratorWithPrecision
-            self.dev = SoundDeviceSamplesGeneratorWithPrecision(device=self.device, numchannels=16)
+            self.dev = SoundDeviceSamplesGeneratorWithPrecision(device=self.device, num_channels=16)
             
         # Turn Volt to Pascal 
         self.source_mixer = ac.SourceMixer(sources=[self.dev],weights=np.array([1/0.0016])) #TODO
@@ -196,7 +200,7 @@ class Processor:
         self.sample_splitter = ac.SampleSplitter(source=self.source_mixer, buffer_size=1024) 
         
         # Generator for logging the time data
-        self.writeH5 = ac.WriteH5(source=self.sample_splitter, name=f"{self.data_filename}.h5") 
+        self.writeH5 = ac.WriteH5(source=self.sample_splitter, file=f"{self.data_filename}.h5")
         
         if self.ckpt_path is None or not self.model_on:
             print("No model has been loaded. Model Option will not be availiable.")
@@ -405,6 +409,71 @@ class Processor:
             
         print("Removed objects from sample splitter.")
         
+    def start_verification(self):
+        """ Start the verification process
+        """
+        print("\nStarting verification.")
+
+        self._generators()
+
+        # Create verification pipeline elements
+        self.lastOut_verif = LastInOut(source=self.sample_splitter)
+        self.verif_power = ac.TimePower(source=self.lastOut_verif)
+        self.verif_avg = ac.TimeAverage(source=self.verif_power, naverage=1024)
+
+        self.sample_splitter.register_object(self.lastOut_verif)
+
+        self._verification_threads()
+        self.verification_thread.start()
+        print("Verification thread started.")
+
+    def stop_verification(self):
+        """ Stop the verification process
+        """
+        print("Stopping verification.")
+        self.verification_stop_event.set()
+        self.verification_thread.join()
+        print("Verification thread stopped.")
+        self.sample_splitter.remove_object(self.lastOut_verif)
+
+    def get_verification_results(self):
+        """ Get current verification results
+        """
+        with self.verification_result_lock:
+            return self.verification_results.copy()
+
+    def _verification_threads(self):
+        """ Threads for the verification process """
+        self.verification_stop_event = Event()
+        self.verification_thread = Thread(target=self._verification_generator)
+
+    def _verification_generator(self):
+        """ Verification Generator """
+        gen = self.verif_avg.result(num=1)
+
+        while not self.verification_stop_event.is_set():
+            try:
+                # Get averaged power (Mean Square)
+                ms = next(gen)
+
+                # Convert to RMS
+                rms = np.sqrt(ms)
+
+                # Convert to dB (avoid log(0))
+                levels = 20 * np.log10(rms + 1e-9)
+
+                # Flatten just in case, though result(num=1) should yield (1, 16)
+                levels = levels.flatten()
+
+                with self.verification_result_lock:
+                    self.verification_results['levels'] = levels
+
+            except StopIteration:
+                break
+            except Exception as e:
+                print(f"Exception in _verification_generator: {e}")
+                break
+
     def get_beamforming_results(self):
         """ Get current results of the model
         """

@@ -36,8 +36,9 @@ class Dashboard:
         # Setting model and beamforming threads to None
         self.model_thread = None
         self.beamforming_thread = None
+        self.verification_thread = None
         
-        # Method for processing the data, 0 is Deep Learning, 1 is Beamforming
+        # Method for processing the data, 0 is Deep Learning, 1 is Beamforming, 2 is Verification
         self.method = 1 # Default is Beamfroming
         
         # Setting up the acoustic camera plot
@@ -87,7 +88,7 @@ class Dashboard:
             
                 # Switching between Deep Learning and Beamforming
                 self.method_selector = RadioButtonGroup(
-                    labels=["Deep Learning", "Beamforming"], 
+                    labels=["Deep Learning", "Beamforming", "Verification"],
                     active=self.method,
                     width=inside_width
                 )  # 0 is "Deep Learning" as default
@@ -139,6 +140,7 @@ class Dashboard:
         self.camera_view_callback = None
         self.estimation_callback = None
         self.beamforming_callback = None
+        self.verification_callback = None
         self.overflow_callback = None
 
         # Setting up the deviation plot
@@ -289,18 +291,22 @@ class Dashboard:
             content_layout = column(
                 Div(text=f"{content_layout_style}"),
                 self.acoustic_camera_plot.fig,
+                self.acoustic_camera_plot.verification_plot,
                 self.coordinates_display,
                 self.level_display,
                 self.overflow_status
             )
+            self.acoustic_camera_plot.verification_plot.visible = False
         
         elif self.processor.dev is not None:
             content_layout = column(
                 Div(text=f"{content_layout_style}"),
                 self.acoustic_camera_plot.fig,
+                self.acoustic_camera_plot.verification_plot,
                 self.coordinates_display,
                 self.level_display
             )
+            self.acoustic_camera_plot.verification_plot.visible = False
             
         else:
             content_layout = column(
@@ -363,6 +369,10 @@ class Dashboard:
         if self.beamforming_callback is not None:
             curdoc().remove_periodic_callback(self.beamforming_callback)
             self.beamforming_callback = None
+
+        if self.verification_callback is not None:
+            curdoc().remove_periodic_callback(self.verification_callback)
+            self.verification_callback = None
         
         # Start the new method
         if new == 0:
@@ -373,6 +383,8 @@ class Dashboard:
             self.model_params_column.visible = True
             self.overflow_status.visible = True
             self.acoustic_camera_plot.second_view.visible = True
+            self.acoustic_camera_plot.fig.visible = True
+            self.acoustic_camera_plot.verification_plot.visible = False
         
         elif new == 1:
             print("Wechsel zu Beamforming")
@@ -383,6 +395,20 @@ class Dashboard:
             self.overflow_status.visible = False
             self.acoustic_camera_plot.second_view.visible = False
             self.deviation_plot.visible = False
+            self.acoustic_camera_plot.fig.visible = True
+            self.acoustic_camera_plot.verification_plot.visible = False
+
+        elif new == 2:
+            print("Switch to Verification")
+            self.method = 2
+            self.verification_callback = curdoc().add_periodic_callback(
+                self.update_verification, self.beamforming_update_interval) # reuse interval
+            self.model_params_column.visible = False
+            self.overflow_status.visible = False
+            self.acoustic_camera_plot.second_view.visible = False
+            self.deviation_plot.visible = False
+            self.acoustic_camera_plot.fig.visible = False
+            self.acoustic_camera_plot.verification_plot.visible = True
             
     def toggle_cluster(self, attr, old, new):
         """Callback for the cluster results selector"""
@@ -414,6 +440,10 @@ class Dashboard:
         if self.beamforming_thread is not None:
             self.stop_beamforming()
             self.measurement_button.label = self.config.get("ui.start_text")
+
+        if self.verification_thread is not None:
+            self.stop_verification()
+            self.measurement_button.label = self.config.get("ui.start_text")
                 
     def start_measurement(self):
         """Callback für den Messungs-Button, startet oder stoppt die Messung"""        
@@ -428,6 +458,16 @@ class Dashboard:
                 self.measurement_button.label = self.config.get("ui.start_text")
                 self._enable_widgets()
         
+        elif self.method == 2:
+            if self.verification_thread is None:
+                self.start_verification()
+                self.measurement_button.label = self.config.get("ui.stop_text")
+                self._disable_widgets()
+            else:
+                self.stop_measurement()
+                self.measurement_button.label = self.config.get("ui.start_text")
+                self._enable_widgets()
+
         elif self.method == 1:
             if self.beamforming_thread is None:
                 self.start_beamforming()
@@ -683,6 +723,28 @@ class Dashboard:
         self.coordinates_display.text = f"X: {x_val}<br>Y: {y_val}"
         self.level_display.text = f"Level: {beamforming_data['max_s']}"
         
+    def start_verification(self):
+        if self.verification_thread is None:
+            self.verification_thread = threading.Thread(target=self.processor.start_verification, daemon=True)
+            self.verification_thread.start()
+
+        if self.verification_callback is None:
+            self.verification_callback = curdoc().add_periodic_callback(self.update_verification, self.beamforming_update_interval)
+
+    def stop_verification(self):
+        if self.verification_thread is not None:
+            self.verification_thread.join()
+            self.verification_thread = None
+            self.processor.stop_verification()
+
+        if self.verification_callback is not None:
+            curdoc().remove_periodic_callback(self.verification_callback)
+            self.verification_callback = None
+
+    def update_verification(self):
+        results = self.processor.get_verification_results()
+        self.acoustic_camera_plot.update_plot_verification(results)
+
     def update_beamforming_dot(self):
         beamforming_data = self.processor.get_beamforming_results()
         self.acoustic_camera_plot.update_plot_beamforming_dots(beamforming_data)

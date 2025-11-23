@@ -9,7 +9,7 @@ class SoundDeviceSamplesGeneratorWithPrecision(ac.SoundDeviceSamplesGenerator):
     def result(self, num):
         self.stream = stream_obj = sd.InputStream(
             device=self.device,
-            channels=self.numchannels,
+            channels=self.num_channels,
             clip_off=True,
             samplerate=self.sample_freq
         )
