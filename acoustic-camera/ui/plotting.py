@@ -60,7 +60,11 @@ class AcousticCameraPlot:
         
         self.bar_low, self.bar_high = self.threshold, self.max_level
         
+        # Data source for verification plot
+        self.verification_cds = ColumnDataSource(data=dict(channels=[], top=[]))
+
         self.fig, self.second_view = self._create_plot()
+        self.verification_plot = self._create_verification_plot()
 
     def update_view_range(self, Z):
         self.xmin, self.xmax, self.ymin, self.ymax = self.calculate_view_range(Z)
@@ -146,6 +150,12 @@ class AcousticCameraPlot:
         self.model_shadow_renderer.visible = False
         max_x, max_y = results['max_x'], results['max_y']
         self.beamforming_dot_cds.data = dict(x=max_x, y=max_y)
+
+    def update_plot_verification(self, results):
+        """ Update the verification plot """
+        levels = results['levels']
+        channels = [str(i+1) for i in range(len(levels))]
+        self.verification_cds.data = dict(channels=channels, top=levels)
 
     def update_camera_image(self, img):
         self.camera_cds.data['image_data'] = [img]
@@ -252,6 +262,21 @@ class AcousticCameraPlot:
             second_view.ygrid.grid_line_color = None
         
         return second_view
+
+    def _create_verification_plot(self):
+        channels = [str(i+1) for i in range(16)]
+        p = figure(x_range=channels, height=600, width=900, title="Microphone Levels (dB)",
+                   toolbar_location=None, tools="")
+
+        p.vbar(x='channels', top='top', width=0.9, source=self.verification_cds)
+
+        p.y_range.start = -100
+        p.y_range.end = 0
+        p.xgrid.grid_line_color = None
+        p.xaxis.axis_label = "Channel"
+        p.yaxis.axis_label = "Level (dB)"
+
+        return p
         
     def _create_plot(self):
         fig = self._create_base_fig()

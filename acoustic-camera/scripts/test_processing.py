@@ -17,8 +17,8 @@ ac.config.global_caching = 'none' # type: ignore
 
 base_path = config.get("acoular.micgeom_file.base_path")
 file_name = config.get("acoular.micgeom_file.file_name")
-micgeom_path = Path(ac.__file__).parent / base_path / file_name
-device_index = get_uma16_index() 
+micgeom_path = Path(base_path) / file_name
+device_index = 0 # Default since we probably don't have the device attached
 
 model_on = True
 

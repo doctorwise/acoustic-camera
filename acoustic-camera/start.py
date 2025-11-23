@@ -17,6 +17,7 @@ bokeh_process = None
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, help="Path to an explicit checkpoint (.keras)")
 parser.add_argument("--no-flask", action="store_true", help="Start only the Bokeh app without Flask")
+parser.add_argument("--no-camera", action="store_true", help="Disable camera")
 
 args, unknown = parser.parse_known_args()
 
@@ -36,15 +37,15 @@ def start_bokeh():
     """
     global bokeh_process
     
+    cmd = [sys.executable, "-m", "bokeh", "serve", "--allow-websocket-origin=127.0.0.1:5000", "scripts/bokeh_app.py", "--args"]
+
     if args.model:
-        bokeh_process = subprocess.Popen(
-            [sys.executable, "-m", "bokeh", "serve", "--allow-websocket-origin=127.0.0.1:5000", "scripts/bokeh_app.py",
-            "--args", "--model", args.model]
-        )
-    else:
-        bokeh_process = subprocess.Popen(
-            [sys.executable, "-m", "bokeh", "serve", "--allow-websocket-origin=127.0.0.1:5000", "scripts/bokeh_app.py", "--args"],
-        )
+        cmd.extend(["--model", args.model])
+
+    if args.no_camera:
+        cmd.append("--no-camera")
+
+    bokeh_process = subprocess.Popen(cmd)
 
 def stop_processes():
     """
@@ -82,20 +83,13 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, handle_exit)
     
     if args.no_flask:
+        cmd = [sys.executable, "-m", "bokeh", "serve", "scripts/bokeh_app.py", "--args"]
         if args.model:
-        
-            subprocess.run([
-                        sys.executable, "-m", "bokeh", "serve",
-                        "scripts/bokeh_app.py",
-                        "--args", "--model", args.model
-                    ])
+            cmd.extend(["--model", args.model])
+        if args.no_camera:
+            cmd.append("--no-camera")
             
-        else:
-            
-            subprocess.run([
-                        sys.executable, "-m", "bokeh", "serve",
-                        "scripts/bokeh_app.py"
-                    ])
+        subprocess.run(cmd)
             
         webbrowser.open("http://localhost:5006/bokeh_app")
         

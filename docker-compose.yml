@@ -1,0 +1,15 @@
+services:
+  acoustic-camera:
+    build: .
+    ports:
+      - "5000:5000"
+      - "5006:5006"
+    volumes:
+      - .:/app
+      - ~/.config/pulse/cookie:/root/.config/pulse/cookie  # Optional: For cookie authentication if needed
+    environment:
+      - PULSE_SERVER=docker.for.mac.localhost
+    # This extra_hosts is sometimes needed for linux containers to talk to host on Mac
+    # usually host.docker.internal works, but sometimes we need manual mapping
+    # extra_hosts:
+    #   - "docker.for.mac.localhost:host-gateway"

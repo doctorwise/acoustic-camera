@@ -90,7 +90,7 @@
         "micgeom_file": {
             "mic": "Uma16",
             "base_path": "xml",
-            "file_name": "minidsp_uma-16_mirrored.xml"
+            "file_name": "uma16_geom.xml"
         }
     },
     "beamforming": {
